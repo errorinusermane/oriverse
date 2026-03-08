@@ -2,6 +2,7 @@
 emulator -list-avds
 emulator -avd Pixel_7
 
+npx expo start --android --clear
 npx expo start
 
 ### worktree 관련
