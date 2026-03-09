@@ -1,6 +1,7 @@
 ### Expo 실행방법
 emulator -list-avds
 emulator -avd Pixel_7
+emulator -avd Pixel_7 -no-snapshot-load # 무한로딩 걸릴 때
 
 npx expo start --android --clear
 npx expo start
