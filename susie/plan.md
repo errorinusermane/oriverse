@@ -181,7 +181,8 @@ Oriverse
 │         └── 스크립트 콘텐츠 로컬 캐싱 (읽기 전용 오프라인 학습 가능)
 │
 ├── [백엔드 - Supabase]
-│   ├── Auth                                # 구글/페이스북/애플 로그인
+│   ├── Auth                                # 소셜 로그인 전용 (자체 이메일 로그인 없음)
+│   │                                       # MVP: Google OAuth 완료. 추후: Facebook, Apple
 │   ├── PostgreSQL DB                       # 메인 데이터베이스
 │   ├── Row Level Security (RLS)            # 데이터 접근 제어
 │   ├── DB Trigger                          # voice_messages INSERT 시 moderation_status 강제 'pending'
@@ -408,7 +409,11 @@ $$ LANGUAGE plpgsql;
 
 ```
 [인증]
-supabase.auth.signUp / signInWithPassword / signInWithOAuth
+# 자체 로그인 없음. 소셜 로그인만 지원.
+# MVP: Google OAuth (완료). 추후 추가 예정: Facebook, Apple
+supabase.auth.signInWithOAuth({ provider: 'google' })  # MVP 완료
+# supabase.auth.signInWithOAuth({ provider: 'facebook' })  # 추후 추가
+# supabase.auth.signInWithOAuth({ provider: 'apple' })     # 추후 추가
 supabase.auth.updateUser({ data: { native_language_id, learning_language_id, timezone } })
 
 [온보딩]

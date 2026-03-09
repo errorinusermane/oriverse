@@ -1,6 +1,8 @@
-import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../../src/lib/supabase';
+import { useAuthStore } from '../../src/store/authStore';
 
 function MenuItem({
   icon,
@@ -35,25 +37,46 @@ function MenuItem({
 }
 
 export default function ProfileScreen() {
+  const { user } = useAuthStore();
+
+  const displayName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? '사용자';
+  const email = user?.email ?? '';
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
+
+  const handleSignOut = () => {
+    Alert.alert('로그아웃', '로그아웃 하시겠습니까?', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '로그아웃',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+          // onAuthStateChange가 세션 null 감지 → _layout.tsx에서 /auth로 자동 이동
+        },
+      },
+    ]);
+  };
+
   return (
     <ScrollView className="flex-1 bg-gray-50">
       {/* 프로필 헤더 */}
       <View className="bg-white px-6 py-8 items-center border-b border-gray-100">
-        <View className="w-20 h-20 rounded-full bg-blue-100 items-center justify-center mb-3">
-          {/* TODO(Day 2): 실제 아바타 이미지 */}
-          <Ionicons name="person" size={36} color="#3B82F6" />
+        <View className="w-20 h-20 rounded-full bg-blue-100 items-center justify-center mb-3 overflow-hidden">
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} className="w-20 h-20" />
+          ) : (
+            <Ionicons name="person" size={36} color="#3B82F6" />
+          )}
         </View>
-        {/* TODO(Day 2): 실제 이름/이메일 */}
-        <Text className="text-lg font-bold text-gray-800">사용자</Text>
-        <Text className="text-sm text-gray-400 mt-0.5">user@example.com</Text>
+        <Text className="text-lg font-bold text-gray-800">{displayName}</Text>
+        <Text className="text-sm text-gray-400 mt-0.5">{email}</Text>
 
         {/* 구독 상태 배지 */}
         <View className="mt-3 bg-gray-100 px-3 py-1 rounded-full">
           <Text className="text-xs text-gray-500 font-medium">무료 플랜</Text>
         </View>
 
-        {/* 학습 언어 정보 */}
-        {/* TODO(Day 3): 온보딩 후 실제 언어 표시 */}
+        {/* 학습 언어 정보 (TODO Day 3: 온보딩 후 실제 언어 표시) */}
         <View className="flex-row gap-4 mt-4">
           <View className="items-center">
             <Text className="text-xs text-gray-400">학습 언어</Text>
@@ -117,13 +140,7 @@ export default function ProfileScreen() {
             icon="log-out-outline"
             label="로그아웃"
             destructive
-            onPress={() => {
-              // TODO(Day 2): supabase.auth.signOut()
-              Alert.alert('로그아웃', '로그아웃 하시겠습니까?', [
-                { text: '취소', style: 'cancel' },
-                { text: '로그아웃', style: 'destructive', onPress: () => {} },
-              ]);
-            }}
+            onPress={handleSignOut}
           />
         </View>
       </View>
