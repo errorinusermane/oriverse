@@ -20,6 +20,10 @@ day1이야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일
 cd /Users/susie/Desktop/Temp_Laptop3/Vibe_Files        
 npx create-expo-app@latest oriverse --template blank-typescript
 
+### 나중에 할 일 모음
+- 맨 처음 배우려는 국가 분기 나눌 때, 지도 모양으로 하기
+- 온보딩 시 3단계가 퀴즈인데, 퀴즈 의미가 없음. 지금 냅두긴 했는데 나중에 뭐... 어플 사용 방법이라든지 그런 걸로 바꾸거나 아예 삭제하는 게 나을 듯.
+
 # ======================================================================== #
 
 ### 이제 Claude 창시자인 Boris가 말한 병렬 처리해보고자 설계
