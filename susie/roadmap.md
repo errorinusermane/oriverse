@@ -225,3 +225,4 @@ Day 12 — 배포
 2. iOS → Android 먼저, iOS는 Day 12 이후
 3. Stripe → 2차, MVP는 Google Play Billing만
 4. 오프라인 큐 → 2차, MVP는 에러 메시지 + 재시도
+5. 레벨 퀴즈 (MCQ 5문항) → MVP 임시 구현. 추후 다른 방식으로 교체 예정 (방법 미정)
