@@ -14,7 +14,7 @@ git worktree remove [워크트리 이름] --force
 
 ### 매일 task
 You are a chief task manager.
-day1이야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일/AI가 할 일 나누고, 병목 정리해서 줘.
+day4야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일/AI가 할 일 나누고, 병목 정리해서 줘.
 
 ### 처음 만들 때
 cd /Users/susie/Desktop/Temp_Laptop3/Vibe_Files        
