@@ -34,15 +34,20 @@ serve(async (req) => {
 
     const storagePath = `${voice}/${script_id}.mp3`
 
-    // 1. Storage 캐시 확인
-    const { data: existingFile } = await supabase.storage
+    // 🟡 Fix: list() 대신 createSignedUrl로 존재 확인 (EAFP — 1 RTT 절약, exact match 보장)
+    const { data: cachedUrl } = await supabase.storage
       .from(BUCKET)
-      .list(voice, { search: `${script_id}.mp3` })
+      .createSignedUrl(storagePath, SIGNED_URL_TTL)
 
-    const isCached = existingFile && existingFile.length > 0
+    if (cachedUrl) {
+      return new Response(
+        JSON.stringify({ url: cachedUrl.signedUrl, cached: true, path: storagePath }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
-    if (!isCached) {
-      // 2. DB에서 스크립트 텍스트 조회
+    // 캐시 미스 → TTS 생성
+    // 2. DB에서 스크립트 텍스트 조회
       const { data: script, error: scriptError } = await supabase
         .from('lesson_scripts')
         .select('script_text, speaker')
@@ -90,11 +95,12 @@ serve(async (req) => {
       const audioBuffer = await openaiRes.arrayBuffer()
 
       // 4. Storage 저장
+      // 🟠 Fix: upsert: true — 동시 요청 시 race condition 방지
       const { error: uploadError } = await supabase.storage
         .from(BUCKET)
         .upload(storagePath, audioBuffer, {
           contentType: 'audio/mpeg',
-          upsert: false,
+          upsert: true,
         })
 
       if (uploadError) {
@@ -109,9 +115,8 @@ serve(async (req) => {
         .from('lesson_scripts')
         .update({ audio_storage_path: storagePath })
         .eq('id', script_id)
-    }
 
-    // 6. 서명 URL 반환 (캐시 히트 / 신규 생성 공통)
+    // 5. 서명 URL 반환
     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(storagePath, SIGNED_URL_TTL)
@@ -124,11 +129,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({
-        url: signedUrlData.signedUrl,
-        cached: isCached,
-        path: storagePath,
-      }),
+      JSON.stringify({ url: signedUrlData.signedUrl, cached: false, path: storagePath }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (err) {

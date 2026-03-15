@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -104,12 +104,17 @@ export default function LearnScreen() {
   const [stats, setStats] = useState<UserStats>({ streak_days: 0, points: 0 });
   const [loading, setLoading] = useState(true);
 
-  // 탭 복귀 시마다 재로드 (useEffect는 탭 마운트 유지로 미실행)
+  // user가 null → non-null로 바뀔 때 초기 로드 (탭이 이미 focused인 경우 useFocusEffect 미발동 보완)
+  useEffect(() => {
+    if (user) loadData();
+  }, [user?.id]);
+
+  // 탭 복귀 시마다 재로드
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
       loadData();
-    }, [user])
+    }, [user?.id])
   );
 
   async function loadData() {

@@ -5,6 +5,7 @@ emulator -avd Pixel_7 -no-snapshot-load # 무한로딩 걸릴 때
 
 npx expo start --android --clear
 npx expo start
+npx expo run:android
 
 ### worktree 관련
 git worktree list
