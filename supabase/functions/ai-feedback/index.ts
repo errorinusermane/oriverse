@@ -4,7 +4,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const DAILY_LIMIT = 5
+const DAILY_LIMIT = Number(Deno.env.get('DAILY_LIMIT') ?? '5')
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,11 +17,31 @@ serve(async (req) => {
   }
 
   try {
-    const { user_id, original_script, transcript } = await req.json()
-
-    if (!user_id || !original_script || !transcript) {
+    // JWT 검증
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
-        JSON.stringify({ error: 'user_id, original_script, transcript are required' }),
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    const { data: { user }, error: authError } = await createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    ).auth.getUser()
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { original_script, transcript } = await req.json()
+
+    if (!original_script || !transcript) {
+      return new Response(
+        JSON.stringify({ error: 'original_script, transcript are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -37,8 +57,8 @@ serve(async (req) => {
     const { data: stats, error: statsError } = await supabase
       .from('user_daily_stats')
       .select('ai_feedback_count')
-      .eq('user_id', user_id)
-      .eq('date', today)
+      .eq('user_id', user.id)
+      .eq('stat_date', today)
       .single()
 
     if (statsError && statsError.code !== 'PGRST116') {
@@ -54,7 +74,7 @@ serve(async (req) => {
     if (currentCount >= DAILY_LIMIT) {
       return new Response(
         JSON.stringify({ error: 'Daily limit reached' }),
-        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
@@ -96,15 +116,28 @@ Respond ONLY with valid JSON. No markdown, no explanation.`,
     }
 
     const openaiData = await openaiRes.json()
-    const feedback = JSON.parse(openaiData.choices[0].message.content)
+
+    let feedback
+    try {
+      feedback = JSON.parse(openaiData.choices[0].message.content)
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'AI 응답 파싱 실패' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     // 카운트 증가 (upsert)
-    await supabase
+    const { error: upsertError } = await supabase
       .from('user_daily_stats')
       .upsert(
-        { user_id, date: today, ai_feedback_count: currentCount + 1 },
-        { onConflict: 'user_id,date' }
+        { user_id: user.id, stat_date: today, ai_feedback_count: currentCount + 1 },
+        { onConflict: 'user_id,stat_date' }
       )
+
+    if (upsertError) {
+      console.error('[ai-feedback] upsert failed:', upsertError)
+    }
 
     return new Response(
       JSON.stringify({
