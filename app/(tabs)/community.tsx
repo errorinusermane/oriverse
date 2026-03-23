@@ -1,13 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAudioStore } from '../../src/store/audioStore';
 import { useAuthStore } from '../../src/store/authStore';
 import { supabase } from '../../src/lib/supabase';
-
-// TODO(Day 8): DB에서 user_lesson_progress 완료 수 가져오기
-const COMPLETED_STEPS = 6; // 임시 하드코딩
 
 type CommunityState = 'locked' | 'preview' | 'full';
 type CommunityTab = 'broadcast' | 'myConversations';
@@ -23,7 +20,7 @@ type ModerationStatus = 'pending' | 'approved' | 'rejected';
 
 interface BroadcastItem {
   id: string;
-  user_id: string;
+  sender_id: string;
   userName: string;
   flag: string;
   learningLang: string;
@@ -32,12 +29,12 @@ interface BroadcastItem {
   audioUrl: string | null;
 }
 
-async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastItem[]> {
+async function fetchBroadcasts(currentUserId: string | null): Promise<{ items: BroadcastItem[]; error: string | null }> {
   let query = supabase
     .from('voice_messages')
     .select(`
       id,
-      user_id,
+      sender_id,
       storage_path,
       duration_seconds,
       moderation_status,
@@ -48,7 +45,7 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastI
   if (currentUserId) {
     // Show approved posts from everyone + own pending/rejected posts
     query = query.or(
-      `moderation_status.eq.approved,and(user_id.eq.${currentUserId},moderation_status.in.(pending,rejected))`
+      `moderation_status.eq.approved,and(sender_id.eq.${currentUserId},moderation_status.in.(pending,rejected))`
     );
   } else {
     query = query.eq('moderation_status', 'approved');
@@ -56,7 +53,8 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastI
 
   const { data: messages, error } = await query.order('created_at', { ascending: false });
 
-  if (error || !messages) return [];
+  if (error) return { items: [], error: error.message };
+  if (!messages) return { items: [], error: null };
 
   const items = await Promise.all(
     messages.map(async (msg) => {
@@ -73,7 +71,7 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastI
       const lang = Array.isArray(msg.language) ? msg.language[0] : msg.language;
       return {
         id: msg.id,
-        user_id: msg.user_id,
+        sender_id: msg.sender_id,
         userName: '익명 학습자',
         flag: lang?.flag_emoji ?? '🌐',
         learningLang: lang ? `${lang.name} 학습 중` : '언어 학습 중',
@@ -84,7 +82,7 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastI
     })
   );
 
-  return items;
+  return { items, error: null };
 }
 
 function formatDuration(secs: number): string {
@@ -139,7 +137,7 @@ function BroadcastFeedItem({ item, currentUserId }: { item: BroadcastItem; curre
         <View className="flex-1">
           <View className="flex-row items-center gap-2">
             <Text className="font-medium text-gray-800">{item.userName}</Text>
-            {item.user_id === currentUserId && (
+            {item.sender_id === currentUserId && (
               <ModerationBadge status={item.moderation_status} />
             )}
           </View>
@@ -294,14 +292,26 @@ function FullView() {
   const [activeTab, setActiveTab] = useState<CommunityTab>('broadcast');
   const [broadcasts, setBroadcasts] = useState<BroadcastItem[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
-  useEffect(() => {
-    fetchBroadcasts(currentUserId).then((items) => {
+  const loadBroadcasts = useCallback(async () => {
+    setLoadingBroadcasts(true);
+    setFetchError(null);
+    try {
+      const { items, error } = await fetchBroadcasts(currentUserId);
       setBroadcasts(items);
+      setFetchError(error);
+    } catch (e: unknown) {
+      setFetchError(e instanceof Error ? e.message : '불러오기 실패');
+    } finally {
       setLoadingBroadcasts(false);
-    });
+    }
   }, [currentUserId]);
+
+  useEffect(() => {
+    loadBroadcasts();
+  }, [loadBroadcasts]);
 
   return (
     <View className="flex-1">
@@ -343,6 +353,18 @@ function FullView() {
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#3B82F6" />
           </View>
+        ) : fetchError ? (
+          <View className="flex-1 items-center justify-center px-8">
+            <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
+            <Text className="text-gray-800 font-semibold mt-3 mb-1">불러오기 실패</Text>
+            <Text className="text-gray-400 text-sm text-center mb-4">{fetchError}</Text>
+            <Pressable
+              onPress={loadBroadcasts}
+              className="bg-blue-500 px-6 py-3 rounded-xl"
+            >
+              <Text className="text-white font-semibold">다시 시도</Text>
+            </Pressable>
+          </View>
         ) : broadcasts.length === 0 ? (
           // 빈 상태
           <View className="flex-1 items-center justify-center">
@@ -378,11 +400,39 @@ function FullView() {
 
 // ─── 메인 ─────────────────────────────────────────────────────
 export default function CommunityScreen() {
-  const state = getCommunityState(COMPLETED_STEPS);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const [completedSteps, setCompletedSteps] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    supabase
+      .from('user_lesson_progress')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'completed')
+      .then(({ count, error }) => {
+        if (error || count === null) {
+          setCompletedSteps(0); // fail to 'preview' or 'locked', never 'full'
+        } else {
+          setCompletedSteps(count);
+        }
+      });
+  }, [userId]);
+
+  if (completedSteps === null) {
+    return (
+      <View className="flex-1 bg-white items-center justify-center">
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  const state = getCommunityState(completedSteps);
 
   return (
     <View className="flex-1 bg-white">
-      {state === 'locked' && <LockedView completedSteps={COMPLETED_STEPS} />}
+      {state === 'locked' && <LockedView completedSteps={completedSteps} />}
       {state === 'preview' && <PreviewView />}
       {state === 'full' && <FullView />}
     </View>

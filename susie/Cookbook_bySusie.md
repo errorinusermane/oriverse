@@ -7,6 +7,11 @@ npx expo start --android --clear
 npx expo start
 npx expo run:android
 
+### Expo 이제 실기기에서 사용하는 용도로 apk 만들 때
+eas env:list --environment preview
+eas build --platform android --profile preview --clear-cache
+eas build --platform android --profile preview
+
 ### worktree 관련
 git worktree list
 claude --worktree [워크트리 이름]
@@ -15,8 +20,8 @@ git worktree remove [워크트리 이름] --force
 
 ### 매일 task
 You are a chief task manager.
-day8이야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일/AI가 할 일 나누고, 병목 정리해서 줘.
-오늘 AI에게 병렬적으로 업무 맡길 때 각 업무에 대해 agent 어떤 역할을 부여하는 게 가장 코드를 잘 짤 수 있을지 같이 정리해.
+day9이야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일/AI가 할 일 나누고, 병목 정리해서 줘.
+오늘 AI에게 병렬적으로 업무 맡길 때 각 업무에 대해 agent 어떤 역할을 부여하는 게 가장 코드를 잘 짤 수 있을지 영어로 정리해.
 
 ### 처음 만들 때
 cd /Users/susie/Desktop/Temp_Laptop3/Vibe_Files        

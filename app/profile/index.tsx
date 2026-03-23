@@ -1,4 +1,5 @@
 import { View, Text, Pressable, ScrollView, Alert, Image } from 'react-native';
+import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
@@ -38,6 +39,19 @@ function MenuItem({
 
 export default function ProfileScreen() {
   const { user } = useAuthStore();
+  const [onboardingStep, setOnboardingStep] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('users')
+      .select('onboarding_step')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        setOnboardingStep(data?.onboarding_step ?? 0);
+      });
+  }, [user?.id]);
 
   const displayName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? '사용자';
   const email = user?.email ?? '';
@@ -101,8 +115,11 @@ export default function ProfileScreen() {
             label="학습 언어 변경"
             sublabel="변경 시 언어별 진행도는 독립 저장"
             onPress={() => {
-              // TODO(Day 3): 언어 변경 확인 팝업
-              Alert.alert('학습 언어 변경', '온보딩 완료 후 이용 가능합니다.');
+              if (onboardingStep !== null && onboardingStep >= 3) {
+                router.push('/onboarding');
+              } else {
+                Alert.alert('학습 언어 변경', '온보딩 완료 후 이용 가능합니다.');
+              }
             }}
           />
           <MenuItem

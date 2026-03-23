@@ -103,6 +103,7 @@ export default function LearnScreen() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [stats, setStats] = useState<UserStats>({ streak_days: 0, points: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // user가 null → non-null로 바뀔 때 초기 로드 (탭이 이미 focused인 경우 useFocusEffect 미발동 보완)
   useEffect(() => {
@@ -120,71 +121,77 @@ export default function LearnScreen() {
   async function loadData() {
     if (!user) return;
     setLoading(true);
+    setError(null);
 
-    // 1. 유저 stats + learning_language_id 조회
-    const { data: userData } = await supabase
-      .from('users')
-      .select('learning_language_id, streak_days, points')
-      .eq('id', user.id)
-      .single();
+    try {
+      // 1. 유저 stats + learning_language_id 조회
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('learning_language_id, streak_days, points')
+        .eq('id', user.id)
+        .single();
 
-    if (userData?.streak_days != null || userData?.points != null) {
-      setStats({ streak_days: userData.streak_days ?? 0, points: userData.points ?? 0 });
-    }
+      if (userError) throw userError;
 
-    const langId = userData?.learning_language_id;
-    if (!langId) {
+      if (userData?.streak_days != null || userData?.points != null) {
+        setStats({ streak_days: userData.streak_days ?? 0, points: userData.points ?? 0 });
+      }
+
+      const langId = userData?.learning_language_id;
+      if (!langId) return;
+
+      // 2. lessons 조회
+      const { data: lessonRows, error: lessonError } = await supabase
+        .from('lessons')
+        .select('id, step_number, title, description, is_premium')
+        .eq('language_id', langId)
+        .order('step_number');
+
+      if (lessonError) throw lessonError;
+      if (!lessonRows) return;
+
+      const lessonIds = lessonRows.map((l) => l.id);
+
+      // 3. script 개수 직접 집계 (embedded count는 문자열 반환 이슈)
+      const [{ data: scriptRows, error: scriptError }, { data: progressRows, error: progressError }] = await Promise.all([
+        supabase.from('lesson_scripts').select('lesson_id').in('lesson_id', lessonIds),
+        supabase
+          .from('user_lesson_progress')
+          .select('lesson_id')
+          .eq('user_id', user.id)
+          .eq('status', 'completed')
+          .in('lesson_id', lessonIds),
+      ]);
+
+      if (scriptError) throw scriptError;
+      if (progressError) throw progressError;
+
+      const scriptCountByLesson: Record<string, number> = {};
+      for (const row of scriptRows ?? []) {
+        scriptCountByLesson[row.lesson_id] = (scriptCountByLesson[row.lesson_id] ?? 0) + 1;
+      }
+
+      const completedByLesson: Record<string, number> = {};
+      for (const row of progressRows ?? []) {
+        completedByLesson[row.lesson_id] = (completedByLesson[row.lesson_id] ?? 0) + 1;
+      }
+
+      const mapped: Lesson[] = lessonRows.map((l) => ({
+        id: l.id,
+        step_number: l.step_number,
+        title: l.title,
+        description: l.description,
+        is_premium: l.is_premium,
+        script_count: scriptCountByLesson[l.id] ?? 0,
+        completed_count: completedByLesson[l.id] ?? 0,
+      }));
+
+      setLessons(mapped);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '데이터를 불러오지 못했어요.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // 2. lessons 조회
-    const { data: lessonRows } = await supabase
-      .from('lessons')
-      .select('id, step_number, title, description, is_premium')
-      .eq('language_id', langId)
-      .order('step_number');
-
-    if (!lessonRows) {
-      setLoading(false);
-      return;
-    }
-
-    const lessonIds = lessonRows.map((l) => l.id);
-
-    // 3. script 개수 직접 집계 (embedded count는 문자열 반환 이슈)
-    const [{ data: scriptRows }, { data: progressRows }] = await Promise.all([
-      supabase.from('lesson_scripts').select('lesson_id').in('lesson_id', lessonIds),
-      supabase
-        .from('user_lesson_progress')
-        .select('lesson_id')
-        .eq('user_id', user.id)
-        .eq('status', 'completed')
-        .in('lesson_id', lessonIds),
-    ]);
-
-    const scriptCountByLesson: Record<string, number> = {};
-    for (const row of scriptRows ?? []) {
-      scriptCountByLesson[row.lesson_id] = (scriptCountByLesson[row.lesson_id] ?? 0) + 1;
-    }
-
-    const completedByLesson: Record<string, number> = {};
-    for (const row of progressRows ?? []) {
-      completedByLesson[row.lesson_id] = (completedByLesson[row.lesson_id] ?? 0) + 1;
-    }
-
-    const mapped: Lesson[] = lessonRows.map((l) => ({
-      id: l.id,
-      step_number: l.step_number,
-      title: l.title,
-      description: l.description,
-      is_premium: l.is_premium,
-      script_count: scriptCountByLesson[l.id] ?? 0,
-      completed_count: completedByLesson[l.id] ?? 0,
-    }));
-
-    setLessons(mapped);
-    setLoading(false);
   }
 
   const completedSteps = lessons.filter(
@@ -195,6 +202,22 @@ export default function LearnScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
         <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View className="flex-1 items-center justify-center bg-gray-50 px-8">
+        <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+        <Text className="text-gray-800 font-semibold text-lg mt-4 mb-2">불러오기 실패</Text>
+        <Text className="text-gray-400 text-sm text-center mb-6">{error}</Text>
+        <Pressable
+          onPress={loadData}
+          className="bg-blue-500 px-6 py-3 rounded-xl"
+        >
+          <Text className="text-white font-semibold">다시 시도</Text>
+        </Pressable>
       </View>
     );
   }
