@@ -1,15 +1,190 @@
-import { View, Text, Pressable, ScrollView, Image } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useAudioStore } from '../../src/store/audioStore';
+import { useAuthStore } from '../../src/store/authStore';
+import { supabase } from '../../src/lib/supabase';
 
 // TODO(Day 8): DB에서 user_lesson_progress 완료 수 가져오기
-const COMPLETED_STEPS = 0; // 임시 하드코딩
+const COMPLETED_STEPS = 6; // 임시 하드코딩
 
 type CommunityState = 'locked' | 'preview' | 'full';
+type CommunityTab = 'broadcast' | 'myConversations';
 
 function getCommunityState(completedSteps: number): CommunityState {
   if (completedSteps >= 6) return 'full';
   if (completedSteps >= 3) return 'preview';
   return 'locked';
+}
+
+// ─── 브로드캐스트 아이템 타입 ────────────────────────────────
+type ModerationStatus = 'pending' | 'approved' | 'rejected';
+
+interface BroadcastItem {
+  id: string;
+  user_id: string;
+  userName: string;
+  flag: string;
+  learningLang: string;
+  durationSecs: number;
+  moderation_status: ModerationStatus;
+  audioUrl: string | null;
+}
+
+async function fetchBroadcasts(currentUserId: string | null): Promise<BroadcastItem[]> {
+  let query = supabase
+    .from('voice_messages')
+    .select(`
+      id,
+      user_id,
+      storage_path,
+      duration_seconds,
+      moderation_status,
+      language:languages!language_id(flag_emoji, name)
+    `)
+    .eq('broadcast_status', 'broadcasted');
+
+  if (currentUserId) {
+    // Show approved posts from everyone + own pending/rejected posts
+    query = query.or(
+      `moderation_status.eq.approved,and(user_id.eq.${currentUserId},moderation_status.in.(pending,rejected))`
+    );
+  } else {
+    query = query.eq('moderation_status', 'approved');
+  }
+
+  const { data: messages, error } = await query.order('created_at', { ascending: false });
+
+  if (error || !messages) return [];
+
+  const items = await Promise.all(
+    messages.map(async (msg) => {
+      let audioUrl: string | null = null;
+      try {
+        const { data } = await supabase.functions.invoke('get-signed-url', {
+          body: { storage_path: msg.storage_path, bucket: 'user-recordings' },
+        });
+        audioUrl = data?.signedUrl ?? null;
+      } catch {
+        // leave null — item renders as disabled
+      }
+
+      const lang = Array.isArray(msg.language) ? msg.language[0] : msg.language;
+      return {
+        id: msg.id,
+        user_id: msg.user_id,
+        userName: '익명 학습자',
+        flag: lang?.flag_emoji ?? '🌐',
+        learningLang: lang ? `${lang.name} 학습 중` : '언어 학습 중',
+        durationSecs: msg.duration_seconds ?? 0,
+        moderation_status: msg.moderation_status as ModerationStatus,
+        audioUrl,
+      } as BroadcastItem;
+    })
+  );
+
+  return items;
+}
+
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ─── 검수 상태 뱃지 ──────────────────────────────────────────
+function ModerationBadge({ status }: { status: ModerationStatus }) {
+  if (status === 'approved') return null;
+  if (status === 'pending') {
+    return (
+      <View className="bg-gray-200 rounded-full px-2 py-0.5">
+        <Text className="text-xs text-gray-500">검토중</Text>
+      </View>
+    );
+  }
+  return (
+    <View className="bg-red-100 rounded-full px-2 py-0.5">
+      <Text className="text-xs text-red-500">거부됨</Text>
+    </View>
+  );
+}
+
+// ─── 브로드캐스트 피드 아이템 ────────────────────────────────
+function BroadcastFeedItem({ item, currentUserId }: { item: BroadcastItem; currentUserId: string | null }) {
+  const { activeId, status, play, stop } = useAudioStore();
+
+  const isActive = activeId === item.id;
+  const isLoading = isActive && status === 'loading';
+  const isPlaying = isActive && status === 'playing';
+  const hasError = isActive && status === 'error';
+  const canPlay = item.audioUrl !== null;
+
+  function handlePress() {
+    if (!canPlay) return;
+    if (isPlaying) {
+      stop();
+    } else {
+      play(item.id, async () => item.audioUrl);
+    }
+  }
+
+  return (
+    <View className="bg-white rounded-2xl p-4 mb-3 border border-gray-100">
+      {/* 유저 정보 */}
+      <View className="flex-row items-center gap-3 mb-3">
+        <View className="w-10 h-10 rounded-full bg-gray-200 items-center justify-center">
+          <Text style={{ fontSize: 18 }}>{item.flag}</Text>
+        </View>
+        <View className="flex-1">
+          <View className="flex-row items-center gap-2">
+            <Text className="font-medium text-gray-800">{item.userName}</Text>
+            {item.user_id === currentUserId && (
+              <ModerationBadge status={item.moderation_status} />
+            )}
+          </View>
+          <Text className="text-xs text-gray-400">{item.flag} {item.learningLang}</Text>
+        </View>
+      </View>
+
+      {/* 오디오 재생 바 */}
+      <Pressable
+        onPress={handlePress}
+        disabled={!canPlay}
+        className={`flex-row items-center gap-3 rounded-xl px-3 py-2.5 ${
+          isPlaying ? 'bg-blue-50' : 'bg-gray-50'
+        }`}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color="#3B82F6" />
+        ) : (
+          <Ionicons
+            name={isPlaying ? 'pause-circle' : 'play-circle'}
+            size={28}
+            color={canPlay ? (isPlaying ? '#3B82F6' : '#9CA3AF') : '#D1D5DB'}
+          />
+        )}
+
+        {/* 진행 바 */}
+        <View className="flex-1 h-1 rounded-full overflow-hidden bg-gray-200">
+          <View
+            className={`h-1 rounded-full ${isPlaying ? 'bg-blue-400' : 'bg-gray-300'}`}
+            style={{ width: isPlaying ? '45%' : '0%' }}
+          />
+        </View>
+
+        <Text className={`text-xs ${isPlaying ? 'text-blue-500' : 'text-gray-400'}`}>
+          {hasError ? '오류' : formatDuration(item.durationSecs)}
+        </Text>
+      </Pressable>
+
+      {!canPlay && (
+        <Text className="text-xs text-gray-300 mt-1 text-center">
+          오디오 준비 중
+        </Text>
+      )}
+    </View>
+  );
 }
 
 // ─── 잠금 화면 (< 3스텝) ──────────────────────────────────────
@@ -27,7 +202,6 @@ function LockedView({ completedSteps }: { completedSteps: number }) {
       <Text className="text-gray-500 text-center leading-6 mb-6">
         스텝 {remaining}개를 더 완료하면{'\n'}전 세계 학습자의 보이스메일을 들을 수 있어요.
       </Text>
-      {/* 진행도 바 */}
       <View className="w-full bg-gray-100 rounded-full h-2 mb-2">
         <View
           className="bg-blue-500 h-2 rounded-full"
@@ -60,7 +234,6 @@ function PreviewView() {
                 <Text className="text-xs text-gray-400">🇺🇸 영어 학습 중</Text>
               </View>
             </View>
-            {/* 음성 재생 바 (비활성) */}
             <View className="flex-row items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
               <Ionicons name="play-circle" size={28} color="#D1D5DB" />
               <View className="flex-1 h-1 bg-gray-200 rounded-full" />
@@ -73,31 +246,124 @@ function PreviewView() {
   );
 }
 
+// ─── 내 대화 ──────────────────────────────────────────────────
+// TODO(Day 8): 실제 conversations 목록으로 교체
+const MOCK_CONVERSATIONS: { id: string; partnerFlag: string; partnerName: string; lastOrder: number }[] = [];
+
+function MyConversationsView() {
+  const router = useRouter();
+
+  if (MOCK_CONVERSATIONS.length === 0) {
+    return (
+      <View className="flex-1 items-center justify-center">
+        <View className="w-20 h-20 rounded-full bg-gray-100 items-center justify-center mb-4">
+          <Text className="text-3xl">💬</Text>
+        </View>
+        <Text className="text-gray-800 font-semibold mb-1">아직 대화가 없어요</Text>
+        <Text className="text-gray-400 text-sm text-center px-8">
+          브로드캐스트에 답장을 남기면 여기에 표시돼요
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView className="flex-1 px-4 mt-3">
+      {MOCK_CONVERSATIONS.map((conv) => (
+        <Pressable
+          key={conv.id}
+          onPress={() => router.push(`/conversation/${conv.id}`)}
+          className="bg-white rounded-2xl p-4 mb-3 border border-gray-100 flex-row items-center gap-3"
+        >
+          <View className="w-10 h-10 rounded-full bg-gray-200 items-center justify-center">
+            <Text style={{ fontSize: 18 }}>{conv.partnerFlag}</Text>
+          </View>
+          <View className="flex-1">
+            <Text className="font-medium text-gray-800">{conv.partnerName}</Text>
+            <Text className="text-xs text-gray-400">메시지 {conv.lastOrder}개</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
 // ─── 전체 활성화 (6스텝 완료) ────────────────────────────────
 function FullView() {
+  const [activeTab, setActiveTab] = useState<CommunityTab>('broadcast');
+  const [broadcasts, setBroadcasts] = useState<BroadcastItem[]>([]);
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(true);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+
+  useEffect(() => {
+    fetchBroadcasts(currentUserId).then((items) => {
+      setBroadcasts(items);
+      setLoadingBroadcasts(false);
+    });
+  }, [currentUserId]);
+
   return (
     <View className="flex-1">
-      {/* 탭: 브로드캐스트 / 내 대화 */}
-      {/* TODO(Day 8): 탭 전환 로직 추가 */}
+      {/* 탭 바 */}
       <View className="flex-row border-b border-gray-100 px-4">
-        <Pressable className="flex-1 py-3 border-b-2 border-blue-500 items-center">
-          <Text className="text-blue-600 font-semibold text-sm">브로드캐스트</Text>
+        <Pressable
+          onPress={() => setActiveTab('broadcast')}
+          className={`flex-1 py-3 items-center border-b-2 ${
+            activeTab === 'broadcast' ? 'border-blue-500' : 'border-transparent'
+          }`}
+        >
+          <Text
+            className={`text-sm font-semibold ${
+              activeTab === 'broadcast' ? 'text-blue-600' : 'text-gray-400'
+            }`}
+          >
+            브로드캐스트
+          </Text>
         </Pressable>
-        <Pressable className="flex-1 py-3 items-center">
-          <Text className="text-gray-400 text-sm">내 대화</Text>
+        <Pressable
+          onPress={() => setActiveTab('myConversations')}
+          className={`flex-1 py-3 items-center border-b-2 ${
+            activeTab === 'myConversations' ? 'border-blue-500' : 'border-transparent'
+          }`}
+        >
+          <Text
+            className={`text-sm font-semibold ${
+              activeTab === 'myConversations' ? 'text-blue-600' : 'text-gray-400'
+            }`}
+          >
+            내 대화
+          </Text>
         </Pressable>
       </View>
 
-      {/* 피드 — Empty State */}
-      <View className="flex-1 items-center justify-center">
-        <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center mb-4">
-          <Text className="text-3xl">🐦</Text>
-        </View>
-        <Text className="text-gray-800 font-semibold mb-1">첫 보이스메일을 남겨보세요</Text>
-        <Text className="text-gray-400 text-sm text-center px-8">
-          전 세계 학습자들에게 내 목소리를 들려주세요
-        </Text>
-      </View>
+      {/* 탭 콘텐츠 */}
+      {activeTab === 'broadcast' ? (
+        loadingBroadcasts ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
+        ) : broadcasts.length === 0 ? (
+          // 빈 상태
+          <View className="flex-1 items-center justify-center">
+            <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center mb-4">
+              <Text className="text-3xl">🐦</Text>
+            </View>
+            <Text className="text-gray-800 font-semibold mb-1">첫 보이스메일을 남겨보세요</Text>
+            <Text className="text-gray-400 text-sm text-center px-8">
+              전 세계 학습자들에게 내 목소리를 들려주세요
+            </Text>
+          </View>
+        ) : (
+          <ScrollView className="flex-1 px-4 mt-3">
+            {broadcasts.map((item) => (
+              <BroadcastFeedItem key={item.id} item={item} currentUserId={currentUserId} />
+            ))}
+          </ScrollView>
+        )
+      ) : (
+        <MyConversationsView />
+      )}
 
       {/* 새 녹음 FAB */}
       <Pressable
