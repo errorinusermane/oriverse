@@ -85,6 +85,12 @@ export function useRecorder(userId: string | null) {
       const uri = recordingRef.current.getURI(); // ← 먼저 취득
       await recordingRef.current.stopAndUnloadAsync();
       recordingRef.current = null;
+      if (uri) {
+        const info = await FileSystem.getInfoAsync(uri);
+        console.log('[stopRecording] uri:', uri, '| size:', (info as any).size ?? 'unknown', 'bytes');
+      } else {
+        console.warn('[stopRecording] uri is null after stop');
+      }
       return uri ?? null;
     } catch (e) {
       console.error('[stopRecording] error:', e);
@@ -99,8 +105,8 @@ export function useRecorder(userId: string | null) {
     if (!userId) return null;
     setIsUploading(true);
     try {
-      const ext = uri.split('.').pop() ?? 'm4a';
-      const path = `${userId}/${scriptId}.${ext}`;
+      // RLS 정책 경로 형식: {userId}/{scriptId}.m4a — 확장자 고정
+      const path = `${userId}/${scriptId}.m4a`;
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -123,6 +129,7 @@ export function useRecorder(userId: string | null) {
         console.error('[uploadRecording] HTTP error:', result.status, result.body);
         return null;
       }
+      console.log('[uploadRecording] success — status:', result.status, '| path:', path);
       return path;
     } catch (e) {
       console.error('[uploadRecording] Exception:', e);
