@@ -40,7 +40,9 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<{ items: B
       moderation_status,
       language:languages!language_id(flag_emoji, name)
     `)
-    .eq('broadcast_status', 'broadcasted');
+    .eq('broadcast_status', 'broadcasted')
+    .eq('is_active', true)
+    .gt('expires_at', new Date().toISOString());
 
   if (currentUserId) {
     // Show approved posts from everyone + own pending/rejected posts
