@@ -296,7 +296,7 @@ Steps:
 **Agent 1-A 실행 프롬프트 (worktree: `fix/tts-autoplay`)**
 ```
 isolation: worktree
-branch: fix/tts-autoplay
+branch: fix-tts-autoplay
 
 [이슈 1 Agent 프롬프트 내용 그대로]
 
@@ -308,7 +308,7 @@ Make sure your changes do not touch any file other than app/learn/[id].tsx.
 **Agent 1-B 실행 프롬프트 (worktree: `fix/stt-debug`)**
 ```
 isolation: worktree
-branch: fix/stt-debug
+branch: fix-stt-debug
 
 [이슈 2-B Agent 프롬프트 내용 그대로]
 
@@ -321,7 +321,7 @@ app/learn/[id].tsx and src/hooks/useRecorder.ts.
 **Agent 1-C 실행 프롬프트 (worktree: `fix/broadcast-schema`)**
 ```
 isolation: worktree
-branch: fix/broadcast-schema
+branch: fix-broadcast-schema
 
 [이슈 4-A Agent 프롬프트 내용 그대로]
 
@@ -334,13 +334,13 @@ This agent produces no git changes — the human applies SQL manually in Supabas
 ```bash
 # Agent 1-A 완료 후
 git checkout main
-git merge --no-ff fix/tts-autoplay -m "fix: auto-play TTS on AI turn in learn screen"
-git branch -d fix/tts-autoplay
+git merge --no-ff fix-tts-autoplay -m "fix: auto-play TTS on AI turn in learn screen"
+git branch -d fix-tts-autoplay
 
 # Agent 1-B 완료 후
 git checkout main
-git merge --no-ff fix/stt-debug -m "fix: add STT pipeline debug logging and specific error messages"
-git branch -d fix/stt-debug
+git merge --no-ff fix-stt-debug -m "fix: add STT pipeline debug logging and specific error messages"
+git branch -d fix-stt-debug
 
 # Agent 1-C: SQL만 출력하므로 머지 없음. Supabase SQL Editor에 수동 실행.
 ```
