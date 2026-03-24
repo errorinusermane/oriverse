@@ -365,6 +365,7 @@ export default function LessonScreen() {
   // useCallback: countdown useEffect 의존성 배열에 넣기 위해 필요 (stale closure 방지)
   const handleStopRecording = useCallback(async () => {
     const uri = await recorder.stopRecording();
+    console.log('[handleStopRecording] stopRecording uri:', uri);
     if (!uri || !current) return;
     setRecordingUri(uri);
     setScoringPhase('analyzing');
@@ -372,15 +373,27 @@ export default function LessonScreen() {
     try {
       // 1. 업로드
       const path = await recorder.uploadRecording(uri, current.id);
+      console.log('[handleStopRecording] uploadRecording path:', path);
       if (!path || !user || !id) {
         advance();
         return;
       }
 
       // 2. STT
+      const sttPayload = { recording_path: path, language: lessonLanguageCode };
+      console.log('[stt-transcribe] request payload:', JSON.stringify(sttPayload));
       const sttRes = await supabase.functions.invoke('stt-transcribe', {
-        body: { recording_path: path, language: lessonLanguageCode },
+        body: sttPayload,
       });
+      console.log('[stt-transcribe] response — data:', JSON.stringify(sttRes.data), '| error:', JSON.stringify(sttRes.error));
+
+      if (sttRes.error) {
+        console.error('[stt-transcribe] edge function error:', sttRes.error);
+        Alert.alert('서버 연결 실패', '서버 연결 실패 — 잠시 후 다시 시도하세요');
+        advance();
+        return;
+      }
+
       const transcript: string = sttRes.data?.transcript ?? '';
 
       if (!transcript) {
@@ -392,18 +405,26 @@ export default function LessonScreen() {
       setLastTranscript(transcript);
 
       // 3. 발음 점수 산출 + DB 저장 (edge function이 upsert 담당)
+      const scorePayload = { lesson_id: id, script_id: current.id, transcript };
+      console.log('[pronunciation-score] request params:', JSON.stringify(scorePayload));
       const scoreRes = await supabase.functions.invoke('pronunciation-score', {
-        body: { lesson_id: id, script_id: current.id, transcript },
+        body: scorePayload,
       });
+      console.log('[pronunciation-score] response — data:', JSON.stringify(scoreRes.data), '| error:', JSON.stringify(scoreRes.error));
 
-      if (scoreRes.data) {
+      if (scoreRes.error) {
+        console.error('[pronunciation-score] edge function error:', scoreRes.error);
+        Alert.alert('채점 실패', '서버 연결 실패 — 잠시 후 다시 시도하세요');
+        advance();
+      } else if (scoreRes.data) {
         setScoreResult(scoreRes.data);
         setScoringPhase('result');
       } else {
         Alert.alert('채점 실패', '발음 채점에 실패했어요. 다시 시도해주세요.');
         advance();
       }
-    } catch {
+    } catch (e) {
+      console.error('[handleStopRecording] unexpected error:', e);
       Alert.alert('오류', '분석 중 오류가 발생했어요. 다시 시도해주세요.');
       advance();
     }
