@@ -14,6 +14,7 @@ import { supabase } from '../../src/lib/supabase';
 import { useAuthStore } from '../../src/store/authStore';
 import { useTTS } from '../../src/hooks/useTTS';
 import { useRecorder } from '../../src/hooks/useRecorder';
+import { RecordingWaveform } from '../../src/components/RecordingWaveform';
 
 interface Script {
   id: string;
@@ -575,14 +576,9 @@ export default function LessonScreen() {
                   aiFeedbackError={aiFeedbackError}
                 />
               ) : recorder.isRecording ? (
-                // 녹음 중: 카운트다운 + 완료 버튼
+                // 녹음 중: 웨이브폼 + 완료 버튼
                 <>
-                  <View className="flex-row items-center gap-2 bg-red-50 px-4 py-2 rounded-full">
-                    <View className="w-2 h-2 rounded-full bg-red-500" />
-                    <Text className="text-red-500 text-sm font-semibold">
-                      {recorder.countdown}초
-                    </Text>
-                  </View>
+                  <RecordingWaveform countdown={recorder.countdown} />
                   <Pressable
                     onPress={handleStopRecording}
                     className="bg-red-500 flex-row items-center gap-2 px-8 py-4 rounded-2xl w-full justify-center"
