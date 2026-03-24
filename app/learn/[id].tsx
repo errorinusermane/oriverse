@@ -313,7 +313,7 @@ export default function LessonScreen() {
   // ── AI 턴 전환 시 TTS 자동 재생 ──────────────────────────────
   useEffect(() => {
     if (!current) return;
-    if (current.speaker === 'ai') {
+    if (current.speaker === 'ai' && tts.status === 'idle') {
       // 짧은 딜레이 후 자동 재생 (화면 전환 애니메이션 끝난 후)
       const timer = setTimeout(() => tts.play(), 300);
       return () => clearTimeout(timer);
