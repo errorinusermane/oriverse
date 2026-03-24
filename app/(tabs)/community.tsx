@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Modal, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAudioStore } from '../../src/store/audioStore';
 import { useAuthStore } from '../../src/store/authStore';
 import { supabase } from '../../src/lib/supabase';
+import { useRecorder } from '../../src/hooks/useRecorder';
+import { RecordingWaveform } from '../../src/components/RecordingWaveform';
 
 type CommunityState = 'locked' | 'preview' | 'full';
 type CommunityTab = 'feed' | 'conversations';
@@ -296,6 +298,10 @@ function FullView() {
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const recorder = useRecorder(currentUserId);
 
   const loadBroadcasts = useCallback(async () => {
     setLoadingBroadcasts(true);
@@ -314,6 +320,86 @@ function FullView() {
   useEffect(() => {
     loadBroadcasts();
   }, [loadBroadcasts]);
+
+  // countdown 0 도달 시 자동 중단
+  const handleStopRecording = useCallback(async () => {
+    const uri = await recorder.stopRecording();
+    setRecordingUri(uri);
+  }, [recorder]);
+
+  useEffect(() => {
+    if (recorder.countdown === 0 && recorder.isRecording) {
+      handleStopRecording();
+    }
+  }, [recorder.countdown, recorder.isRecording, handleStopRecording]);
+
+  async function handleStartRecording() {
+    const ok = await recorder.startRecording();
+    if (!ok) {
+      Alert.alert('마이크 권한 필요', '설정에서 마이크 접근을 허용해주세요.');
+    }
+  }
+
+  async function handleCancel() {
+    if (recorder.isRecording) {
+      await recorder.stopRecording();
+    }
+    setRecordingUri(null);
+    setShowRecordModal(false);
+  }
+
+  async function handleSend() {
+    if (!recordingUri || !currentUserId) return;
+    setIsSubmitting(true);
+    try {
+      const durationSecs = 60 - recorder.countdown;
+      const broadcastKey = `broadcast_${Date.now()}`;
+
+      // 1. Get user's learning language
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('learning_language_id')
+        .eq('id', currentUserId)
+        .single();
+
+      // 2. Upload recording
+      const path = await recorder.uploadRecording(recordingUri, broadcastKey);
+      if (!path) {
+        Alert.alert('업로드 실패', '녹음 파일을 업로드하지 못했어요. 다시 시도해주세요.');
+        return;
+      }
+
+      // 3. Deactivate existing active broadcasts from this user
+      await supabase
+        .from('voice_messages')
+        .update({ is_active: false })
+        .eq('sender_id', currentUserId)
+        .eq('broadcast_status', 'broadcasted')
+        .eq('is_active', true);
+
+      // 4. Create new broadcast (expires in 24 hours)
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await supabase.from('voice_messages').insert({
+        sender_id: currentUserId,
+        storage_path: path,
+        duration_seconds: durationSecs,
+        broadcast_status: 'broadcasted',
+        is_active: true,
+        expires_at: expiresAt,
+        moderation_status: 'pending',
+        language_id: profile?.learning_language_id ?? null,
+      });
+
+      setRecordingUri(null);
+      setShowRecordModal(false);
+      loadBroadcasts();
+    } catch (e) {
+      console.error('[handleSend] error:', e);
+      Alert.alert('오류', '브로드캐스트 전송에 실패했어요.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   const myBroadcast = broadcasts.find((b) => b.sender_id === currentUserId) ?? null;
   const otherBroadcasts = broadcasts.filter((b) => b.sender_id !== currentUserId);
@@ -407,10 +493,99 @@ function FullView() {
       {/* 새 녹음 FAB */}
       <Pressable
         className="absolute bottom-6 right-6 w-16 h-16 rounded-full bg-blue-500 items-center justify-center shadow-lg"
-        // TODO(Day 8): 녹음 모달 열기
+        onPress={() => setShowRecordModal(true)}
       >
         <Ionicons name="mic" size={28} color="white" />
       </Pressable>
+
+      {/* 녹음 모달 (bottom-sheet) */}
+      <Modal
+        visible={showRecordModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handleCancel}
+      >
+        <View className="flex-1 justify-end">
+          {/* 반투명 배경 */}
+          <Pressable
+            className="absolute inset-0 bg-black/40"
+            onPress={handleCancel}
+          />
+
+          {/* 바텀 시트 패널 */}
+          <View className="bg-white rounded-t-3xl px-6 pt-4 pb-10">
+            {/* 핸들 바 */}
+            <View className="w-10 h-1 rounded-full bg-gray-300 self-center mb-5" />
+
+            <Text className="text-lg font-bold text-gray-800 text-center mb-6">
+              브로드캐스트 녹음
+            </Text>
+
+            {/* 웨이브폼 (녹음 중일 때만) */}
+            {recorder.isRecording && (
+              <View className="mb-4">
+                <RecordingWaveform countdown={recorder.countdown} />
+              </View>
+            )}
+
+            {/* 카운트다운 타이머 */}
+            <View className="items-center mb-6">
+              <Text
+                className={`text-4xl font-bold tabular-nums ${
+                  recorder.isRecording ? 'text-red-500' : 'text-gray-400'
+                }`}
+              >
+                {String(Math.floor(recorder.countdown / 60)).padStart(2, '0')}:
+                {String(recorder.countdown % 60).padStart(2, '0')}
+              </Text>
+              <Text className="text-xs text-gray-400 mt-1">최대 60초</Text>
+            </View>
+
+            {/* 마이크 버튼 (녹음 전/중) */}
+            {!recordingUri && (
+              <Pressable
+                onPress={recorder.isRecording ? handleStopRecording : handleStartRecording}
+                className={`self-center w-20 h-20 rounded-full items-center justify-center mb-6 ${
+                  recorder.isRecording ? 'bg-red-500' : 'bg-amber-400'
+                }`}
+              >
+                <Ionicons
+                  name={recorder.isRecording ? 'stop' : 'mic'}
+                  size={36}
+                  color="white"
+                />
+              </Pressable>
+            )}
+
+            {/* 녹음 완료 후: 전송 버튼 */}
+            {recordingUri && (
+              <Pressable
+                onPress={handleSend}
+                disabled={isSubmitting || recorder.isUploading}
+                className="bg-blue-500 flex-row items-center justify-center gap-2 py-4 rounded-2xl mb-3"
+              >
+                {isSubmitting || recorder.isUploading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Ionicons name="send" size={18} color="white" />
+                )}
+                <Text className="text-white font-semibold text-base">
+                  {isSubmitting || recorder.isUploading ? '전송 중...' : '전송'}
+                </Text>
+              </Pressable>
+            )}
+
+            {/* 취소 버튼 */}
+            <Pressable
+              onPress={handleCancel}
+              disabled={isSubmitting}
+              className="items-center py-3"
+            >
+              <Text className="text-gray-400 text-sm">취소</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
