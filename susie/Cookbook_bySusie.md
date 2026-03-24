@@ -18,6 +18,17 @@ claude --worktree [워크트리 이름]
 git worktree remove [워크트리 이름]
 git worktree remove [워크트리 이름] --force
 
+### worktree 커밋, 머지, 지우기
+git -C [워크트리 경로] add -A
+git -C [워크트리 경로] commit -m "커밋메세지"
+
+git -C [메인 경로] checkout main
+git -C [메인 경로] pull --ff-only origin main
+
+git -C [워크트리 경로] -m "머지메세지"
+
+git worktree remove [워크트리 이름]
+
 ### 매일 task
 You are a chief task manager.
 day9이야. roadmap.md를 참고해서 오늘 해야할 일을 인간이 할 일/AI가 할 일 나누고, 병목 정리해서 줘.
