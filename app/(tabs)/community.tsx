@@ -249,13 +249,102 @@ function PreviewView() {
 }
 
 // ─── 내 대화 ──────────────────────────────────────────────────
-// TODO(Day 8): 실제 conversations 목록으로 교체
-const MOCK_CONVERSATIONS: { id: string; partnerFlag: string; partnerName: string; lastOrder: number }[] = [];
+interface ConversationItem {
+  id: string;
+  partnerFlag: string;
+  partnerName: string;
+  lastMessageAt: string | null;
+  messageCount: number;
+}
 
-function MyConversationsView() {
+async function fetchConversations(
+  userId: string
+): Promise<{ items: ConversationItem[]; error: string | null }> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select(`
+      id,
+      participant1,
+      participant2,
+      conversation_messages(sender_id, created_at, message_order)
+    `)
+    .order('created_at', { ascending: false });
+
+  if (error) return { items: [], error: error.message };
+  if (!data) return { items: [], error: null };
+
+  const items: ConversationItem[] = data.map((conv) => {
+    const messages = Array.isArray(conv.conversation_messages)
+      ? (conv.conversation_messages as { sender_id: string; created_at: string; message_order: number }[])
+      : [];
+
+    const sorted = [...messages].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    return {
+      id: conv.id,
+      partnerFlag: '🌐',
+      partnerName: '익명 학습자',
+      lastMessageAt: sorted[0]?.created_at ?? null,
+      messageCount: messages.length,
+    };
+  });
+
+  return { items, error: null };
+}
+
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return '방금 전';
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}일 전`;
+  return new Date(iso).toLocaleDateString('ko-KR');
+}
+
+function MyConversationsView({ userId }: { userId: string | null }) {
   const router = useRouter();
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  if (MOCK_CONVERSATIONS.length === 0) {
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetchConversations(userId)
+      .then(({ items, error }) => {
+        setConversations(items);
+        setFetchError(error);
+      })
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <View className="flex-1 items-center justify-center">
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <View className="flex-1 items-center justify-center px-8">
+        <Ionicons name="alert-circle-outline" size={40} color="#EF4444" />
+        <Text className="text-gray-800 font-semibold mt-3 mb-1">불러오기 실패</Text>
+        <Text className="text-gray-400 text-sm text-center">{fetchError}</Text>
+      </View>
+    );
+  }
+
+  if (conversations.length === 0) {
     return (
       <View className="flex-1 items-center justify-center">
         <View className="w-20 h-20 rounded-full bg-gray-100 items-center justify-center mb-4">
@@ -271,7 +360,7 @@ function MyConversationsView() {
 
   return (
     <ScrollView className="flex-1 px-4 mt-3">
-      {MOCK_CONVERSATIONS.map((conv) => (
+      {conversations.map((conv) => (
         <Pressable
           key={conv.id}
           onPress={() => router.push(`/conversation/${conv.id}`)}
@@ -282,7 +371,11 @@ function MyConversationsView() {
           </View>
           <View className="flex-1">
             <Text className="font-medium text-gray-800">{conv.partnerName}</Text>
-            <Text className="text-xs text-gray-400">메시지 {conv.lastOrder}개</Text>
+            <Text className="text-xs text-gray-400">
+              {conv.lastMessageAt
+                ? formatRelativeTime(conv.lastMessageAt)
+                : '아직 메시지 없음'}
+            </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
         </Pressable>
@@ -487,7 +580,7 @@ function FullView() {
           </ScrollView>
         )
       ) : (
-        <MyConversationsView />
+        <MyConversationsView userId={currentUserId} />
       )}
 
       {/* 새 녹음 FAB */}
