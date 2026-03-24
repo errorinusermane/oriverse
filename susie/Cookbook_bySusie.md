@@ -12,11 +12,10 @@ eas env:list --environment preview
 eas build --platform android --profile preview --clear-cache
 eas build --platform android --profile preview
 
-### worktree 관련
+### worktree 관련 - 중요! worktree는 폴더(경로가 있음), branck는 포인터!!
 git worktree list
-claude --worktree [워크트리 이름]
-git worktree remove [워크트리 이름]
-git worktree remove [워크트리 이름] --force
+claude --worktree [워크트리 이름이 아니라 브랜치명임]
+git worktree remove [워크트리 경로]
 
 ### worktree 커밋, 머지, 지우기
 git -C [워크트리 경로] add -A
@@ -25,9 +24,9 @@ git -C [워크트리 경로] commit -m "커밋메세지"
 git -C [메인 경로] checkout main
 git -C [메인 경로] pull --ff-only origin main
 
-git -C [워크트리 경로] -m "머지메세지"
+git -C [메인 경로] merge --no-ff [브랜치명] -m "머지메세지"
 
-git worktree remove [워크트리 이름]
+git worktree remove [워크트리 경로]
 
 ### 매일 task
 You are a chief task manager.
