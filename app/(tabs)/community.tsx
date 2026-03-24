@@ -7,7 +7,7 @@ import { useAuthStore } from '../../src/store/authStore';
 import { supabase } from '../../src/lib/supabase';
 
 type CommunityState = 'locked' | 'preview' | 'full';
-type CommunityTab = 'broadcast' | 'myConversations';
+type CommunityTab = 'feed' | 'conversations';
 
 function getCommunityState(completedSteps: number): CommunityState {
   if (completedSteps >= 6) return 'full';
@@ -291,7 +291,7 @@ function MyConversationsView() {
 
 // ─── 전체 활성화 (6스텝 완료) ────────────────────────────────
 function FullView() {
-  const [activeTab, setActiveTab] = useState<CommunityTab>('broadcast');
+  const [activeTab, setActiveTab] = useState<CommunityTab>('feed');
   const [broadcasts, setBroadcasts] = useState<BroadcastItem[]>([]);
   const [loadingBroadcasts, setLoadingBroadcasts] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -315,42 +315,45 @@ function FullView() {
     loadBroadcasts();
   }, [loadBroadcasts]);
 
+  const myBroadcast = broadcasts.find((b) => b.sender_id === currentUserId) ?? null;
+  const otherBroadcasts = broadcasts.filter((b) => b.sender_id !== currentUserId);
+
   return (
     <View className="flex-1">
       {/* 탭 바 */}
       <View className="flex-row border-b border-gray-100 px-4">
         <Pressable
-          onPress={() => setActiveTab('broadcast')}
+          onPress={() => setActiveTab('feed')}
           className={`flex-1 py-3 items-center border-b-2 ${
-            activeTab === 'broadcast' ? 'border-blue-500' : 'border-transparent'
+            activeTab === 'feed' ? 'border-blue-500' : 'border-transparent'
           }`}
         >
           <Text
             className={`text-sm font-semibold ${
-              activeTab === 'broadcast' ? 'text-blue-600' : 'text-gray-400'
+              activeTab === 'feed' ? 'text-blue-600' : 'text-gray-400'
             }`}
           >
-            브로드캐스트
+            피드
           </Text>
         </Pressable>
         <Pressable
-          onPress={() => setActiveTab('myConversations')}
+          onPress={() => setActiveTab('conversations')}
           className={`flex-1 py-3 items-center border-b-2 ${
-            activeTab === 'myConversations' ? 'border-blue-500' : 'border-transparent'
+            activeTab === 'conversations' ? 'border-blue-500' : 'border-transparent'
           }`}
         >
           <Text
             className={`text-sm font-semibold ${
-              activeTab === 'myConversations' ? 'text-blue-600' : 'text-gray-400'
+              activeTab === 'conversations' ? 'text-blue-600' : 'text-gray-400'
             }`}
           >
-            내 대화
+            대화
           </Text>
         </Pressable>
       </View>
 
       {/* 탭 콘텐츠 */}
-      {activeTab === 'broadcast' ? (
+      {activeTab === 'feed' ? (
         loadingBroadcasts ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" color="#3B82F6" />
@@ -367,22 +370,34 @@ function FullView() {
               <Text className="text-white font-semibold">다시 시도</Text>
             </Pressable>
           </View>
-        ) : broadcasts.length === 0 ? (
-          // 빈 상태
-          <View className="flex-1 items-center justify-center">
-            <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center mb-4">
-              <Text className="text-3xl">🐦</Text>
-            </View>
-            <Text className="text-gray-800 font-semibold mb-1">첫 보이스메일을 남겨보세요</Text>
-            <Text className="text-gray-400 text-sm text-center px-8">
-              전 세계 학습자들에게 내 목소리를 들려주세요
-            </Text>
-          </View>
         ) : (
           <ScrollView className="flex-1 px-4 mt-3">
-            {broadcasts.map((item) => (
-              <BroadcastFeedItem key={item.id} item={item} currentUserId={currentUserId} />
-            ))}
+            {/* 내 브로드캐스트 카드 (활성 중인 경우) */}
+            {myBroadcast && (
+              <View className="mb-4">
+                <Text className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                  내 브로드캐스트
+                </Text>
+                <BroadcastFeedItem item={myBroadcast} currentUserId={currentUserId} />
+              </View>
+            )}
+
+            {/* 다른 사용자 피드 */}
+            {otherBroadcasts.length === 0 ? (
+              <View className="flex-1 items-center justify-center py-20">
+                <View className="w-20 h-20 rounded-full bg-orange-100 items-center justify-center mb-4">
+                  <Text className="text-3xl">🐦</Text>
+                </View>
+                <Text className="text-gray-800 font-semibold mb-1">첫 보이스메일을 남겨보세요</Text>
+                <Text className="text-gray-400 text-sm text-center px-8">
+                  전 세계 학습자들에게 내 목소리를 들려주세요
+                </Text>
+              </View>
+            ) : (
+              otherBroadcasts.map((item) => (
+                <BroadcastFeedItem key={item.id} item={item} currentUserId={currentUserId} />
+              ))
+            )}
           </ScrollView>
         )
       ) : (
