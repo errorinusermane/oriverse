@@ -18,8 +18,6 @@ function getCommunityState(completedSteps: number): CommunityState {
 }
 
 // ─── 브로드캐스트 아이템 타입 ────────────────────────────────
-type ModerationStatus = 'pending' | 'approved' | 'rejected';
-
 interface BroadcastItem {
   id: string;
   sender_id: string;
@@ -27,7 +25,6 @@ interface BroadcastItem {
   flag: string;
   learningLang: string;
   durationSecs: number;
-  moderation_status: ModerationStatus;
   audioUrl: string | null;
 }
 
@@ -46,14 +43,7 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<{ items: B
     .eq('is_active', true)
     .gt('expires_at', new Date().toISOString());
 
-  if (currentUserId) {
-    // Show approved posts from everyone + own pending/rejected posts
-    query = query.or(
-      `moderation_status.eq.approved,and(sender_id.eq.${currentUserId},moderation_status.in.(pending,rejected))`
-    );
-  } else {
-    query = query.eq('moderation_status', 'approved');
-  }
+  query = query.eq('moderation_status', 'approved');
 
   const { data: messages, error } = await query.order('created_at', { ascending: false });
 
@@ -64,12 +54,19 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<{ items: B
     messages.map(async (msg) => {
       let audioUrl: string | null = null;
       try {
-        const { data } = await supabase.functions.invoke('get-signed-url', {
+        console.log('[get-signed-url] requesting storage_path:', msg.storage_path);
+        const { data, error } = await supabase.functions.invoke('get-signed-url', {
           body: { storage_path: msg.storage_path, bucket: 'user-recordings' },
         });
-        audioUrl = data?.signedUrl ?? null;
-      } catch {
-        // leave null — item renders as disabled
+        if (error) {
+          console.error('[get-signed-url] invoke error:', JSON.stringify(error));
+        } else if (!data?.signedUrl) {
+          console.warn('[get-signed-url] no signedUrl in response. data shape:', JSON.stringify(data));
+        } else {
+          audioUrl = data.signedUrl;
+        }
+      } catch (e) {
+        console.error('[get-signed-url] caught exception:', e);
       }
 
       const lang = Array.isArray(msg.language) ? msg.language[0] : msg.language;
@@ -80,7 +77,6 @@ async function fetchBroadcasts(currentUserId: string | null): Promise<{ items: B
         flag: lang?.flag_emoji ?? '🌐',
         learningLang: lang ? `${lang.name} 학습 중` : '언어 학습 중',
         durationSecs: msg.duration_seconds ?? 0,
-        moderation_status: msg.moderation_status as ModerationStatus,
         audioUrl,
       } as BroadcastItem;
     })
@@ -93,23 +89,6 @@ function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-// ─── 검수 상태 뱃지 ──────────────────────────────────────────
-function ModerationBadge({ status }: { status: ModerationStatus }) {
-  if (status === 'approved') return null;
-  if (status === 'pending') {
-    return (
-      <View className="bg-gray-200 rounded-full px-2 py-0.5">
-        <Text className="text-xs text-gray-500">검토중</Text>
-      </View>
-    );
-  }
-  return (
-    <View className="bg-red-100 rounded-full px-2 py-0.5">
-      <Text className="text-xs text-red-500">거부됨</Text>
-    </View>
-  );
 }
 
 // ─── 브로드캐스트 피드 아이템 ────────────────────────────────
@@ -141,9 +120,6 @@ function BroadcastFeedItem({ item, currentUserId }: { item: BroadcastItem; curre
         <View className="flex-1">
           <View className="flex-row items-center gap-2">
             <Text className="font-medium text-gray-800">{item.userName}</Text>
-            {item.sender_id === currentUserId && (
-              <ModerationBadge status={item.moderation_status} />
-            )}
           </View>
           <Text className="text-xs text-gray-400">{item.flag} {item.learningLang}</Text>
         </View>
@@ -448,12 +424,15 @@ function FullView() {
       const durationSecs = 60 - recorder.countdown;
       const broadcastKey = `broadcast_${Date.now()}`;
 
-      // 1. Get user's learning language
+      // 1. Get user's learning language (+ language code for STT)
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('learning_language_id')
+        .select('learning_language_id, languages!learning_language_id(code)')
         .eq('id', currentUserId)
         .single();
+
+      const languageCode: string =
+        (profile as any)?.languages?.code ?? 'en';
 
       // 2. Upload recording
       const path = await recorder.uploadRecording(recordingUri, broadcastKey);
@@ -462,7 +441,16 @@ function FullView() {
         return;
       }
 
-      // 3. Deactivate existing active broadcasts from this user
+      // 3. STT — call before INSERT so the trigger gets a real transcript
+      const sttRes = await supabase.functions.invoke('stt-transcribe', {
+        body: { recording_path: path, language: languageCode },
+      });
+      const transcript: string = sttRes.data?.transcript ?? '';
+      if (sttRes.error) {
+        console.warn('[handleSend] STT failed, continuing without transcript:', sttRes.error);
+      }
+
+      // 4. Deactivate existing active broadcasts from this user
       await supabase
         .from('voice_messages')
         .update({ is_active: false })
@@ -470,7 +458,7 @@ function FullView() {
         .eq('broadcast_status', 'broadcasted')
         .eq('is_active', true);
 
-      // 4. Create new broadcast (expires in 24 hours)
+      // 5. Create new broadcast (expires in 24 hours)
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       await supabase.from('voice_messages').insert({
         sender_id: currentUserId,
@@ -479,8 +467,8 @@ function FullView() {
         broadcast_status: 'broadcasted',
         is_active: true,
         expires_at: expiresAt,
-        moderation_status: 'pending',
         language_id: profile?.learning_language_id ?? null,
+        transcript: transcript || null,
       });
 
       setRecordingUri(null);
@@ -617,7 +605,7 @@ function FullView() {
             {/* 웨이브폼 (녹음 중일 때만) */}
             {recorder.isRecording && (
               <View className="mb-4">
-                <RecordingWaveform countdown={recorder.countdown} />
+                <RecordingWaveform countdown={recorder.countdown} isRecording={recorder.isRecording} />
               </View>
             )}
 

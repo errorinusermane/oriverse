@@ -578,7 +578,7 @@ export default function LessonScreen() {
               ) : recorder.isRecording ? (
                 // 녹음 중: 웨이브폼 + 완료 버튼
                 <>
-                  <RecordingWaveform countdown={recorder.countdown} />
+                  <RecordingWaveform countdown={recorder.countdown} isRecording={recorder.isRecording} />
                   <Pressable
                     onPress={handleStopRecording}
                     className="bg-red-500 flex-row items-center gap-2 px-8 py-4 rounded-2xl w-full justify-center"

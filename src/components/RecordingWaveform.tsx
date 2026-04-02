@@ -6,7 +6,7 @@ const MIN_HEIGHT = 8;
 const MAX_HEIGHT = 32;
 const CYCLE_DURATION = 600; // ms for one full up-down pulse
 
-export function RecordingWaveform({ countdown }: { countdown: number }) {
+export function RecordingWaveform({ countdown, isRecording }: { countdown: number; isRecording: boolean }) {
   const animValues = useRef(
     Array.from({ length: BAR_COUNT }, () => new Animated.Value(MIN_HEIGHT))
   ).current;
@@ -14,6 +14,11 @@ export function RecordingWaveform({ countdown }: { countdown: number }) {
   useEffect(() => {
     const loops: Animated.CompositeAnimation[] = [];
     const timeouts: ReturnType<typeof setTimeout>[] = [];
+
+    if (!isRecording) {
+      animValues.forEach((v) => v.setValue(MIN_HEIGHT));
+      return;
+    }
 
     animValues.forEach((val, i) => {
       const loop = Animated.loop(
@@ -41,7 +46,7 @@ export function RecordingWaveform({ countdown }: { countdown: number }) {
       loops.forEach((l) => l.stop());
       animValues.forEach((v) => v.setValue(MIN_HEIGHT));
     };
-  }, []);
+  }, [isRecording]);
 
   return (
     <View style={{ alignItems: 'center', gap: 6 }}>

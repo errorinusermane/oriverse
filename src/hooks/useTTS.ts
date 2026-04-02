@@ -4,6 +4,7 @@
 
 import { useEffect } from 'react';
 import { useAudioStore } from '../store/audioStore';
+import { supabase } from '../lib/supabase';
 
 type TTSStatus = 'idle' | 'loading' | 'playing' | 'error';
 
@@ -36,12 +37,16 @@ export function useTTS(scriptId: string | null) {
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
     const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        console.error('[useTTS fetchSignedUrl] No active session');
+        return null;
+      }
       const res = await fetch(`${supabaseUrl}/functions/v1/tts-generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // anon key를 Bearer로 사용 (user JWT는 Edge Function gateway에서 검증 실패 가능)
-          Authorization: `Bearer ${anonKey}`,
+          Authorization: `Bearer ${session.access_token}`,
           apikey: anonKey,
         },
         body: JSON.stringify({ script_id: id, voice: 'nova' }),
