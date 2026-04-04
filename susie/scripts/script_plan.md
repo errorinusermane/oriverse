@@ -32,14 +32,22 @@
 
 ## DB 스키마 변경
 
-현재 `lessons` 테이블: `language_id` (= target language만 있음)
-
-**추가 필요:** `native_language_id UUID NULLABLE REFERENCES languages(id)`
+### lessons 테이블
+현재: `language_id` (= target language만 있음)
+**추가:** `native_language_id UUID NULLABLE REFERENCES languages(id)`
 
 - Script 1용 lesson row: `language_id = target` + `native_language_id = native`
 - Scripts 2~6용 lesson row: `language_id = target`, `native_language_id = NULL`
 
 앱에서 script 1 fetch 시: `language_id = target AND native_language_id = native`로 쿼리.
+
+UNIQUE 제약 변경: `(language_id, step_number)` → `(language_id, native_language_id, step_number)`
+
+### lesson_scripts 테이블
+**추가:** `section_title TEXT NULLABLE`
+
+- 섹션이 시작되는 첫 번째 AI row에 섹션 제목 저장 (예: `"1. 들어가자마자"`)
+- 나머지 rows는 NULL
 
 ---
 
@@ -81,3 +89,16 @@
 **Q2. Script 1 native language 범위:**
 - MVP: Korean native만 (6개: KO→EN, KO→ES, KO→DE, KO→FR, KO→ZH, KO→JA)
 - 이후 다른 native language 추가
+
+**Q3. 턴 수:** Full conversation 그대로 (15~20턴)
+
+**Q4. Speaker 규칙:**
+- `사용자:/User:/Usuario:/Utilisateur:/Nutzer:` 접두어 → speaker = `'user'`
+- 접두어 없음 또는 `가:` → speaker = `'ai'`
+- 내러티브 줄(따옴표 없는 상황 설명) → speaker = `'narrator'`
+
+**Q5. 섹션 제목 처리:**
+- `### N. 제목` 줄은 DB에 저장 (UI에 표시)
+- `lesson_scripts.section_title` 컬럼에 저장
+- 해당 섹션의 첫 번째 AI row에 붙임
+- 섹션 제목이 없는 rows는 `section_title = NULL`

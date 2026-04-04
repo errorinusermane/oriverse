@@ -127,7 +127,7 @@ export default function LearnScreen() {
       // 1. 유저 stats + learning_language_id 조회
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('learning_language_id, streak_days, points')
+        .select('learning_language_id, native_language_id, streak_days, points')
         .eq('id', user.id)
         .single();
 
@@ -140,15 +140,32 @@ export default function LearnScreen() {
       const langId = userData?.learning_language_id;
       if (!langId) return;
 
-      // 2. lessons 조회
-      const { data: lessonRows, error: lessonError } = await supabase
-        .from('lessons')
-        .select('id, step_number, title, description, is_premium')
-        .eq('language_id', langId)
-        .order('step_number');
+      const nativeId = userData?.native_language_id;
 
-      if (lessonError) throw lessonError;
-      if (!lessonRows) return;
+      // 2. lessons 조회 (step 1: native_language_id 매칭, steps 2~6: null)
+      const [{ data: step1Rows, error: step1Error }, { data: otherRows, error: otherError }] = await Promise.all([
+        supabase
+          .from('lessons')
+          .select('id, step_number, title, description, is_premium')
+          .eq('language_id', langId)
+          .eq('native_language_id', nativeId)
+          .eq('step_number', 1),
+        supabase
+          .from('lessons')
+          .select('id, step_number, title, description, is_premium')
+          .eq('language_id', langId)
+          .is('native_language_id', null)
+          .neq('step_number', 1),
+      ]);
+
+      if (step1Error) throw step1Error;
+      if (otherError) throw otherError;
+
+      const lessonRows = [...(step1Rows ?? []), ...(otherRows ?? [])].sort(
+        (a, b) => a.step_number - b.step_number
+      );
+
+      if (!lessonRows.length) return;
 
       const lessonIds = lessonRows.map((l) => l.id);
 
