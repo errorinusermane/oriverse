@@ -23,10 +23,18 @@ export default function RootLayout() {
   useEffect(() => {
     // 앱 시작 시 기존 세션 복원
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('[_layout] getSession complete, session:', !!session);
       setSession(session);
       setLoading(false);
       if (session) {
-        router.replace((await resolveRoute(session.user.id)) as any);
+        try {
+          const route = await resolveRoute(session.user.id);
+          console.log('[_layout] resolveRoute →', route);
+          router.replace(route as any);
+        } catch (e) {
+          console.error('[_layout] resolveRoute failed:', e);
+          router.replace('/auth');
+        }
       } else {
         router.replace('/auth');
       }

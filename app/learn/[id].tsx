@@ -19,8 +19,9 @@ import { RecordingWaveform } from '../../src/components/RecordingWaveform';
 interface Script {
   id: string;
   sequence_order: number;
-  speaker: 'ai' | 'user';
+  speaker: 'ai' | 'user' | 'narrator';
   script_text: string;
+  section_title: string | null;
 }
 
 // ── 캐릭터 버블 ──────────────────────────────────────────────
@@ -247,6 +248,8 @@ export default function LessonScreen() {
   // TTS 훅: AI 턴일 때만 script_id 전달
   const tts = useTTS(current?.speaker === 'ai' ? current.id : null);
 
+  // narrator 턴은 자동으로 다음으로 넘어가지 않음 — 유저가 직접 "다음" 누름
+
   // 녹음 훅
   const recorder = useRecorder(user?.id ?? null);
 
@@ -275,28 +278,36 @@ export default function LessonScreen() {
     } catch {}
 
     // 최신 데이터 fetch
-    const [{ data: lessonData }, { data: scriptRows }] = await Promise.all([
-      supabase.from('lessons').select('title, languages(code)').eq('id', id).single(),
-      supabase
-        .from('lesson_scripts')
-        .select('id, sequence_order, speaker, script_text')
-        .eq('lesson_id', id)
-        .order('sequence_order'),
-    ]);
+    try {
+      const [{ data: lessonData, error: lessonError }, { data: scriptRows, error: scriptError }] = await Promise.all([
+        supabase.from('lessons').select('title, languages!lessons_language_id_fkey(code)').eq('id', id).single(),
+        supabase
+          .from('lesson_scripts')
+          .select('id, sequence_order, speaker, script_text, section_title')
+          .eq('lesson_id', id)
+          .order('sequence_order'),
+      ]);
 
-    if (lessonData && scriptRows) {
-      setLessonTitle(lessonData.title);
-      setLessonLanguageCode((lessonData as any).languages?.code ?? 'en');
-      setScripts(scriptRows as Script[]);
+      console.log('[loadLesson] lesson_id:', id);
+      console.log('[loadLesson] lessonData:', lessonData, '| lessonError:', lessonError);
+      console.log('[loadLesson] scriptRows count:', scriptRows?.length, '| scriptError:', scriptError);
+
+      if (lessonData && scriptRows) {
+        setLessonTitle(lessonData.title);
+        setLessonLanguageCode((lessonData as any).languages?.code ?? 'en');
+        setScripts(scriptRows as Script[]);
+
+        try {
+          await AsyncStorage.setItem(
+            cacheKey,
+            JSON.stringify({ title: lessonData.title, scripts: scriptRows })
+          );
+        } catch {}
+      }
+    } catch (e) {
+      console.error('[loadLesson] fetch error:', e);
+    } finally {
       setLoading(false);
-
-      // AsyncStorage에 캐시 저장
-      try {
-        await AsyncStorage.setItem(
-          cacheKey,
-          JSON.stringify({ title: lessonData.title, scripts: scriptRows })
-        );
-      } catch {}
     }
   }
 
@@ -474,6 +485,17 @@ export default function LessonScreen() {
     );
   }
 
+  if (scripts.length === 0) {
+    return (
+      <View className="flex-1 items-center justify-center bg-gray-50 px-8 gap-4">
+        <Text className="text-gray-400 text-center">스크립트를 불러오지 못했어요.</Text>
+        <Pressable onPress={() => router.back()} className="px-6 py-3 rounded-2xl bg-blue-500">
+          <Text className="text-white font-semibold">돌아가기</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
       {/* 헤더 */}
@@ -504,37 +526,62 @@ export default function LessonScreen() {
         />
       ) : (
         <View className="flex-1 justify-between px-6 py-8">
-          {/* 캐릭터 */}
-          <View className="items-center mt-4">
-            <CharacterBubble
-              speaker={current.speaker}
-              phase={
-                current.speaker === 'ai'
-                  ? tts.status === 'playing'
+          {/* 섹션 제목 */}
+          {current.section_title && (
+            <Text className="text-xs font-semibold text-gray-400 text-center tracking-wide uppercase mb-2">
+              {current.section_title}
+            </Text>
+          )}
+
+          {/* 캐릭터 (narrator 턴엔 숨김) */}
+          {current.speaker !== 'narrator' && (
+            <View className="items-center mt-4">
+              <CharacterBubble
+                speaker={current.speaker === 'ai' ? 'ai' : 'user'}
+                phase={
+                  current.speaker === 'ai'
+                    ? tts.status === 'playing'
+                      ? 'speaking'
+                      : 'waiting'
+                    : recorder.isRecording
                     ? 'speaking'
                     : 'waiting'
-                  : recorder.isRecording
-                  ? 'speaking'
-                  : 'waiting'
-              }
-            />
-          </View>
+                }
+              />
+            </View>
+          )}
 
           {/* 말풍선 */}
           <View
             className={`rounded-3xl p-5 mx-2 ${
-              current.speaker === 'ai'
+              current.speaker === 'narrator'
+                ? 'bg-gray-100 border border-gray-200'
+                : current.speaker === 'ai'
                 ? 'bg-white border border-blue-100'
                 : 'bg-amber-50 border border-amber-100'
             }`}
           >
-            <Text className="text-lg text-gray-800 leading-7 text-center">
+            {current.speaker === 'narrator' && (
+              <Text className="text-xs text-gray-400 font-semibold mb-1 text-center">— 상황 —</Text>
+            )}
+            <Text className={`text-lg leading-7 text-center ${current.speaker === 'narrator' ? 'text-gray-500 italic' : 'text-gray-800'}`}>
               {current.script_text}
             </Text>
           </View>
 
           {/* 하단 버튼 */}
-          {current.speaker === 'ai' ? (
+          {current.speaker === 'narrator' ? (
+            // 나레이션 턴: 다음 버튼만
+            <View className="items-center gap-3">
+              <Pressable
+                onPress={advance}
+                className="bg-gray-500 flex-row items-center gap-2 px-8 py-4 rounded-2xl w-full justify-center"
+              >
+                <Text className="text-white font-semibold text-base">다음</Text>
+                <Ionicons name="chevron-forward" size={18} color="white" />
+              </Pressable>
+            </View>
+          ) : current.speaker === 'ai' ? (
             // AI 턴: TTS 재생 버튼 + 다음
             <View className="items-center gap-3">
               <TTSButton
@@ -609,3 +656,4 @@ export default function LessonScreen() {
     </SafeAreaView>
   );
 }
+

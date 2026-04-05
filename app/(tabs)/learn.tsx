@@ -143,13 +143,18 @@ export default function LearnScreen() {
       const nativeId = userData?.native_language_id;
 
       // 2. lessons 조회 (step 1: native_language_id 매칭, steps 2~6: null)
+      const step1Query = supabase
+        .from('lessons')
+        .select('id, step_number, title, description, is_premium')
+        .eq('language_id', langId)
+        .eq('step_number', 1);
+
+      const step1QueryWithNative = nativeId
+        ? step1Query.eq('native_language_id', nativeId)
+        : step1Query.is('native_language_id', null);
+
       const [{ data: step1Rows, error: step1Error }, { data: otherRows, error: otherError }] = await Promise.all([
-        supabase
-          .from('lessons')
-          .select('id, step_number, title, description, is_premium')
-          .eq('language_id', langId)
-          .eq('native_language_id', nativeId)
-          .eq('step_number', 1),
+        step1QueryWithNative,
         supabase
           .from('lessons')
           .select('id, step_number, title, description, is_premium')
