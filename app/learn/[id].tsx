@@ -288,10 +288,6 @@ export default function LessonScreen() {
           .order('sequence_order'),
       ]);
 
-      console.log('[loadLesson] lesson_id:', id);
-      console.log('[loadLesson] lessonData:', lessonData, '| lessonError:', lessonError);
-      console.log('[loadLesson] scriptRows count:', scriptRows?.length, '| scriptError:', scriptError);
-
       if (lessonData && scriptRows) {
         setLessonTitle(lessonData.title);
         setLessonLanguageCode((lessonData as any).languages?.code ?? 'en');

@@ -18,7 +18,7 @@
 사용자: 최고야. 이보다 좋을 순 없어. Couldn't be better. 요즘 기타 쳐. 어제도 기타를 하루 종일 쳤어.
 가: 진짜 재밌었겠다. That must’ve been fun. 
 사용자: 맞아. 너는? Definitely. And you?
-가: 평소랑 똑같아. Same as usual. <평소랑 똑같지, 뭐.> 요즘 너무 피곤해. I’m so tired these days.
+가: 평소랑 똑같지, 뭐. Same as always, you know. 요즘 너무 피곤해. I’m so tired these days.
 사용자: 내 말이. 나도 그래. I know. Tell me about it.
 갑자기 옆에서 할머니가 무거운 짐을 두고가심.
 사용자: 제가 도와드릴게요. 괜찮으세요?
@@ -35,7 +35,7 @@
 사용자: 힘들겠지만 괜찮아. 넌 해낼 수 있어. That must be tough. You’ve got this.
 
 가: 오늘 이야기 들어줘서 고마워. 덕분에 기분이 나아졌어. You made my day.
-사용자: 별말을 다 해. 오히려 내가 고마워. 말해줘서 고마워. 토요일에 만나자. Let’s meet on Saturday.
+사용자: 무슨 소리야, 오히려 내가 고마워! 말해줘서 고마워. 우리 더 자주 보자! We should hang out more often!
 가: 좋아, 한 잔 할래? Sounds good. Want to grab a drink?
 사용자: 아, 이번엔 안 될 것 같아. I can’t this time. 다음주에 만나면 술 한 잔도 되는데 어때? How about next week instead? We could grab a drink then.
 가: 완전 좋지. I’m all for it.

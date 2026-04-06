@@ -53,6 +53,16 @@ npx create-expo-app@latest oriverse --template blank-typescript
 - 더 인원이 많아지면 어떻게 관리할지, SA처럼 부하 정도에 따른 리소스 계획을 작성하기.
 - 전체 보안 검증. 특히, supabase edge functions 배포 시 --no-verify-jwt 옵션을 사용했기 때문에, 추후 openai 무차별 호출 같은 문제 등 회사에 피해를 입힐 만한 요소 없는지, 사용자 보안이 침해될 일이 없는지 검증 필요.
 
+- 학습 탭에서 native language 문장 추가하기 -> 옵션으로 1. native language+target language 문장 전부 보기 2. target language 문장만 보기 3. native language 문장만 보기 3개 옵션 추가하기
+- 한 학습마다 선택지 주기. 게이미피케이션 같은 것. 예를 들어 script3 음식점 대화에서 table for 1, table for 2, table for 3 이런 옵션 뜨면 선택할 수 있게, 메뉴 같은 것도 선택할 수 있게 하기.
+- 나레이션을 모달로 띄우기, 현재는 그냥 텍스트로만 나옴.
+- AI 피드백이 자동으로 나오게 변경.
+- 학습 탭에서 한 lesson마다 점수 보이게 하기.
+- 리그전 만들기.
+- 친구 추가 기능 만들기.
+- 학습 완료했을 때 칭찬 엄청 넣기.
+
+
 # ======================================================================== #
 
 ### 이제 Claude 창시자인 Boris가 말한 병렬 처리해보고자 설계

@@ -21,30 +21,26 @@ export default function RootLayout() {
   const { setSession, setLoading } = useAuthStore();
 
   useEffect(() => {
-    // 앱 시작 시 기존 세션 복원
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      console.log('[_layout] getSession complete, session:', !!session);
-      setSession(session);
-      setLoading(false);
-      if (session) {
-        try {
-          const route = await resolveRoute(session.user.id);
-          console.log('[_layout] resolveRoute →', route);
-          router.replace(route as any);
-        } catch (e) {
-          console.error('[_layout] resolveRoute failed:', e);
-          router.replace('/auth');
-        }
-      } else {
-        router.replace('/auth');
-      }
-    });
-
-    // 세션 변경 리스너 (로그인/로그아웃만 처리 — 토큰 갱신 시 내비게이션 방지)
+    // INITIAL_SESSION: 앱 시작 시 저장된 세션 복원
+    // SIGNED_IN: 로그인 완료
+    // SIGNED_OUT: 로그아웃
+    // TOKEN_REFRESHED 등 나머지 이벤트는 내비게이션 불필요
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
-      if (event === 'SIGNED_IN' && session) {
-        router.replace((await resolveRoute(session.user.id)) as any);
+
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        setLoading(false);
+        if (session) {
+          try {
+            const route = await resolveRoute(session.user.id);
+            router.replace(route as any);
+          } catch (e) {
+            console.error('[_layout] resolveRoute failed:', e);
+            router.replace('/auth');
+          }
+        } else {
+          router.replace('/auth');
+        }
       } else if (event === 'SIGNED_OUT') {
         router.replace('/auth');
       }
